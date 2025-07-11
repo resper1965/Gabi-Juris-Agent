@@ -1,0 +1,369 @@
+{
+  "workflows": [
+    {
+      "name": "Document Processing - Gabi",
+      "active": true,
+      "nodes": [
+        {
+          "id": "webhook-trigger",
+          "name": "Document Processing Trigger",
+          "type": "n8n-nodes-base.webhook",
+          "typeVersion": 1,
+          "position": [0, 0],
+          "parameters": {
+            "httpMethod": "POST",
+            "path": "document-processing",
+            "responseMode": "responseNode",
+            "options": {
+              "responseHeaders": {
+                "parameters": [
+                  {
+                    "name": "Content-Type",
+                    "value": "application/json"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "google-drive-node",
+          "name": "Google Drive - Get File",
+          "type": "n8n-nodes-base.googleDrive",
+          "typeVersion": 2,
+          "position": [300, 0],
+          "parameters": {
+            "operation": "get",
+            "fileId": "={{ $json.documentId }}",
+            "options": {
+              "includeItemsFromAllDrives": true,
+              "supportsAllDrives": true
+            }
+          }
+        },
+        {
+          "id": "sharepoint-node",
+          "name": "SharePoint - Get File",
+          "type": "n8n-nodes-base.microsoftSharePoint",
+          "typeVersion": 1,
+          "position": [300, 100],
+          "parameters": {
+            "operation": "get",
+            "fileId": "={{ $json.documentId }}",
+            "options": {}
+          }
+        },
+        {
+          "id": "text-extraction-node",
+          "name": "Text Extraction",
+          "type": "n8n-nodes-base.code",
+          "typeVersion": 2,
+          "position": [600, 50],
+          "parameters": {
+            "jsCode": "// Extração de texto baseada no tipo de arquivo\nconst fileData = $input.all()[0].json;\nconst mimeType = fileData.mimeType || '';\n\nlet extractedText = '';\nlet wordCount = 0;\nlet pageCount = 0;\n\nif (mimeType.includes('google-apps.document')) {\n  // Google Docs - extrair do conteúdo\n  extractedText = fileData.content || '';\n  wordCount = extractedText.split(/\\s+/).filter(w => w.length > 0).length;\n} else if (mimeType.includes('pdf')) {\n  // PDF - usar extração específica\n  extractedText = $('PDF Text Extraction').extractText(fileData.content);\n  wordCount = extractedText.split(/\\s+/).filter(w => w.length > 0).length;\n  pageCount = $('PDF Text Extraction').getPageCount(fileData.content);\n} else if (mimeType.includes('wordprocessingml')) {\n  // Word document - extrair texto\n  extractedText = $('Word Text Extraction').extractText(fileData.content);\n  wordCount = extractedText.split(/\\s+/).filter(w => w.length > 0).length;\n}\n\nreturn {\n  text: extractedText,\n  wordCount,\n  pageCount,\n  metadata: {\n    mimeType,\n    originalName: fileData.name,\n    fileSize: fileData.size,\n    extractionMethod: 'n8n-workflow',\n    userId: $('Document Processing Trigger').json.userId\n  }\n};"
+          }
+        },
+        {
+          "id": "vector-indexing-node",
+          "name": "Vector Indexing - MCP",
+          "type": "n8n-nodes-base.httpRequest",
+          "typeVersion": 4,
+          "position": [900, 50],
+          "parameters": {
+            "method": "POST",
+            "url": "http://localhost:8080/upload",
+            "sendHeaders": true,
+            "headerParameters": {
+              "parameters": [
+                {
+                  "name": "Content-Type",
+                  "value": "application/json"
+                }
+              ]
+            },
+            "sendBody": true,
+            "bodyParameters": {
+              "parameters": [
+                {
+                  "name": "text",
+                  "value": "={{ $json.text }}"
+                },
+                {
+                  "name": "metadata",
+                  "value": "={{ $json.metadata }}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "database-update-node",
+          "name": "Update Database",
+          "type": "n8n-nodes-base.httpRequest",
+          "typeVersion": 4,
+          "position": [1200, 50],
+          "parameters": {
+            "method": "PUT",
+            "url": "{{ $env.GABI_GATEWAY_URL }}/api/v1/docs/{{ $('Document Processing Trigger').json.documentId }}/status",
+            "sendHeaders": true,
+            "headerParameters": {
+              "parameters": [
+                {
+                  "name": "Authorization",
+                  "value": "Bearer {{ $env.GABI_API_KEY }}"
+                },
+                {
+                  "name": "Content-Type",
+                  "value": "application/json"
+                }
+              ]
+            },
+            "sendBody": true,
+            "bodyParameters": {
+              "parameters": [
+                {
+                  "name": "status",
+                  "value": "indexed"
+                },
+                {
+                  "name": "indexId",
+                  "value": "={{ $json.indexId }}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "response-node",
+          "name": "Response",
+          "type": "n8n-nodes-base.respondToWebhook",
+          "typeVersion": 1,
+          "position": [1500, 50],
+          "parameters": {
+            "respondWith": "json",
+            "responseBody": "={{ { success: true, data: { indexId: $('Vector Indexing - MCP').json.indexId, wordCount: $('Text Extraction').json.wordCount } } }}"
+          }
+        }
+      ],
+      "connections": {
+        "Document Processing Trigger": {
+          "main": [
+            [
+              {
+                "node": "Google Drive - Get File",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "SharePoint - Get File",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Google Drive - Get File": {
+          "main": [
+            [
+              {
+                "node": "Text Extraction",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "SharePoint - Get File": {
+          "main": [
+            [
+              {
+                "node": "Text Extraction",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Text Extraction": {
+          "main": [
+            [
+              {
+                "node": "Vector Indexing - MCP",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Vector Indexing - MCP": {
+          "main": [
+            [
+              {
+                "node": "Update Database",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Update Database": {
+          "main": [
+            [
+              {
+                "node": "Response",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      },
+      "settings": {
+        "executionOrder": "v1"
+      }
+    },
+    {
+      "name": "Document Reindexing - Gabi",
+      "active": true,
+      "nodes": [
+        {
+          "id": "cron-trigger",
+          "name": "Reindex Trigger",
+          "type": "n8n-nodes-base.cron",
+          "typeVersion": 1,
+          "position": [0, 0],
+          "parameters": {
+            "rule": {
+              "hour": 2,
+              "minute": 0
+            }
+          }
+        },
+        {
+          "id": "get-documents-node",
+          "name": "Get Documents for Reindex",
+          "type": "n8n-nodes-base.httpRequest",
+          "typeVersion": 4,
+          "position": [300, 0],
+          "parameters": {
+            "method": "GET",
+            "url": "{{ $env.GABI_GATEWAY_URL }}/api/v1/reindex/candidates",
+            "sendHeaders": true,
+            "headerParameters": {
+              "parameters": [
+                {
+                  "name": "Authorization",
+                  "value": "Bearer {{ $env.GABI_API_KEY }}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "split-batches-node",
+          "name": "Process Documents",
+          "type": "n8n-nodes-base.splitInBatches",
+          "typeVersion": 2,
+          "position": [600, 0],
+          "parameters": {
+            "batchSize": 10,
+            "options": {}
+          }
+        },
+        {
+          "id": "trigger-processing-node",
+          "name": "Trigger Processing",
+          "type": "n8n-nodes-base.httpRequest",
+          "typeVersion": 4,
+          "position": [900, 0],
+          "parameters": {
+            "method": "POST",
+            "url": "{{ $env.GABI_GATEWAY_URL }}/api/v1/reindex/{{ $json.id }}",
+            "sendHeaders": true,
+            "headerParameters": {
+              "parameters": [
+                {
+                  "name": "Authorization",
+                  "value": "Bearer {{ $env.GABI_API_KEY }}"
+                },
+                {
+                  "name": "Content-Type",
+                  "value": "application/json"
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "connections": {
+        "Reindex Trigger": {
+          "main": [
+            [
+              {
+                "node": "Get Documents for Reindex",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Get Documents for Reindex": {
+          "main": [
+            [
+              {
+                "node": "Process Documents",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Process Documents": {
+          "main": [
+            [
+              {
+                "node": "Trigger Processing",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      },
+      "settings": {
+        "executionOrder": "v1"
+      }
+    }
+  ],
+  "credentials": [
+    {
+      "name": "Google Drive API",
+      "type": "n8n-nodes-base.googleDrive",
+      "data": {
+        "clientId": "{{ $env.GOOGLE_CLIENT_ID }}",
+        "clientSecret": "{{ $env.GOOGLE_CLIENT_SECRET }}",
+        "scope": [
+          "https://www.googleapis.com/auth/drive.readonly",
+          "https://www.googleapis.com/auth/documents.readonly"
+        ]
+      }
+    },
+    {
+      "name": "Microsoft SharePoint",
+      "type": "n8n-nodes-base.microsoftSharePoint",
+      "data": {
+        "clientId": "{{ $env.MICROSOFT_CLIENT_ID }}",
+        "clientSecret": "{{ $env.MICROSOFT_CLIENT_SECRET }}",
+        "scope": [
+          "https://graph.microsoft.com/User.Read",
+          "https://graph.microsoft.com/Files.Read.All"
+        ]
+      }
+    }
+  ],
+  "variables": {
+    "GABI_GATEWAY_URL": "http://localhost:3001",
+    "GABI_API_KEY": "your-gabi-api-key",
+    "MCP_SERVER_URL": "http://localhost:8080"
+  }
+} 

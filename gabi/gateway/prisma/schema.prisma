@@ -1,0 +1,196 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =============================================================================
+// MODELOS DE USUÁRIO E AUTENTICAÇÃO
+// =============================================================================
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  avatar    String?
+  role      UserRole @default(USER)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relacionamentos
+  documents Document[]
+  webhookLogs WebhookLog[]
+
+  @@map("users")
+}
+
+enum UserRole {
+  ADMIN
+  USER
+  MODERATOR
+}
+
+// =============================================================================
+// MODELOS DE DOCUMENTOS
+// =============================================================================
+
+model Document {
+  id          String   @id @default(cuid())
+  title       String
+  content     String
+  source      String
+  fileId      String   @unique @map("file_id")
+  baseId      String   @map("base_id")
+  status      DocumentStatus @default(PENDING)
+  vectorId    String?  @map("vector_id")
+  metadata    Json?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  userId      String?  @map("user_id")
+
+  // Relacionamentos
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@map("documents")
+}
+
+enum DocumentStatus {
+  PENDING
+  INDEXED
+  ERROR
+  DELETED
+}
+
+// =============================================================================
+// MODELOS DE WEBHOOK
+// =============================================================================
+
+model WebhookDocument {
+  id            String   @id @default(cuid())
+  source        WebhookSource
+  filename      String
+  fileId        String   @unique @map("file_id")
+  lastModified  DateTime @map("last_modified")
+  baseId        String   @map("base_id")
+  event         WebhookEvent
+  status        WebhookDocumentStatus @default(PENDING)
+  userId        String?  @map("user_id")
+  metadata      Json?
+  vectorId      String?  @map("vector_id")
+  errorMessage  String?  @map("error_message")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  // Relacionamentos
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  logs WebhookLog[]
+
+  @@map("webhook_documents")
+}
+
+enum WebhookSource {
+  GOOGLE
+  SHAREPOINT
+}
+
+enum WebhookEvent {
+  CREATED
+  MODIFIED
+  DELETED
+}
+
+enum WebhookDocumentStatus {
+  PENDING
+  INDEXED
+  ERROR
+  DELETED
+}
+
+// =============================================================================
+// MODELOS DE LOGS E AUDITORIA
+// =============================================================================
+
+model WebhookLog {
+  id              String   @id @default(cuid())
+  webhookId       String   @map("webhook_id")
+  source          WebhookSource
+  event           WebhookEvent
+  fileId          String   @map("file_id")
+  filename        String
+  status          WebhookLogStatus
+  processingTime  Int      @map("processing_time")
+  errorMessage    String?  @map("error_message")
+  ipAddress       String   @map("ip_address")
+  userAgent       String   @map("user_agent")
+  timestamp       DateTime @default(now())
+  userId          String?  @map("user_id")
+
+  // Relacionamentos
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  document WebhookDocument? @relation(fields: [fileId], references: [fileId], onDelete: SetNull)
+
+  @@map("webhook_logs")
+}
+
+enum WebhookLogStatus {
+  SUCCESS
+  ERROR
+}
+
+// =============================================================================
+// MODELOS DE CONFIGURAÇÃO
+// =============================================================================
+
+model WebhookConfig {
+  id                String   @id @default(cuid())
+  apiKey            String   @unique @map("api_key")
+  maxPayloadSize    Int      @default(10485760) @map("max_payload_size") // 10MB
+  rateLimitWindow   Int      @default(60000) @map("rate_limit_window") // 1 minuto
+  rateLimitMax      Int      @default(100) @map("rate_limit_max")
+  retryAttempts     Int      @default(3) @map("retry_attempts")
+  retryDelay        Int      @default(5000) @map("retry_delay") // 5 segundos
+  vectorizationTimeout Int   @default(300000) @map("vectorization_timeout") // 5 minutos
+  isActive          Boolean  @default(true) @map("is_active")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  @@map("webhook_configs")
+}
+
+// =============================================================================
+// MODELOS DE FILAS E PROCESSAMENTO
+// =============================================================================
+
+model WebhookJob {
+  id           String   @id @default(cuid())
+  payload      Json
+  priority     JobPriority @default(NORMAL)
+  attempts     Int      @default(0)
+  maxAttempts  Int      @default(3) @map("max_attempts")
+  status       JobStatus @default(PENDING)
+  createdAt    DateTime @default(now()) @map("created_at")
+  processedAt  DateTime? @map("processed_at")
+  error        String?
+  result       Json?
+
+  @@map("webhook_jobs")
+}
+
+enum JobPriority {
+  LOW
+  NORMAL
+  HIGH
+}
+
+enum JobStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+} 

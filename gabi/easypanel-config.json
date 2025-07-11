@@ -1,0 +1,159 @@
+{
+  "project": {
+    "name": "gabi",
+    "description": "Sistema GABI - Assistente Jurídica Inteligente",
+    "version": "1.0.0",
+    "environment": "production"
+  },
+  "services": {
+    "frontend": {
+      "name": "gabi-frontend",
+      "type": "web",
+      "port": 5173,
+      "build": {
+        "context": "./frontend",
+        "dockerfile": "Dockerfile"
+      },
+      "environment": {
+        "NODE_ENV": "production",
+        "VITE_API_BASE_URL": "https://api.seu-dominio.com/api/v1",
+        "VITE_SUPABASE_URL": "https://seu-projeto.supabase.co",
+        "VITE_SUPABASE_ANON_KEY": "sua-anon-key-aqui"
+      },
+      "volumes": [
+        "./frontend:/app",
+        "/app/node_modules"
+      ],
+      "command": "sh -c \"npm install && npm run build && npm run preview -- --host 0.0.0.0 --port 5173\"",
+      "healthcheck": {
+        "test": ["CMD", "curl", "-f", "http://localhost:5173/"],
+        "interval": "30s",
+        "timeout": "10s",
+        "retries": 3,
+        "start_period": "40s"
+      },
+      "restart": "unless-stopped"
+    },
+    "gateway": {
+      "name": "gabi-gateway",
+      "type": "api",
+      "port": 3001,
+      "build": {
+        "context": "./gateway",
+        "dockerfile": "Dockerfile"
+      },
+      "environment": {
+        "NODE_ENV": "production",
+        "PORT": 3001,
+        "SUPABASE_URL": "https://seu-projeto.supabase.co",
+        "SUPABASE_ANON_KEY": "sua-anon-key-aqui",
+        "SUPABASE_SERVICE_ROLE_KEY": "sua-service-role-key-aqui",
+        "JWT_SECRET": "seu-jwt-secret-super-seguro-64-caracteres-aqui",
+        "ALLOWED_ORIGINS": "https://seu-dominio.com,https://www.seu-dominio.com",
+        "RATE_LIMIT_WINDOW": "900000",
+        "RATE_LIMIT_MAX": "100",
+        "LOG_LEVEL": "info",
+        "LOG_FORMAT": "json",
+        "MAX_PAYLOAD_SIZE": "10485760",
+        "REQUEST_TIMEOUT": "300000",
+        "STORAGE_BUCKET": "gabi-documents",
+        "STORAGE_REGION": "us-east-1"
+      },
+      "volumes": [
+        "./gateway:/app",
+        "/app/node_modules",
+        "./logs:/app/logs"
+      ],
+      "command": "sh -c \"npm install && npm run build && npm start\"",
+      "healthcheck": {
+        "test": ["CMD", "curl", "-f", "http://localhost:3001/health"],
+        "interval": "30s",
+        "timeout": "10s",
+        "retries": 3,
+        "start_period": "40s"
+      },
+      "restart": "unless-stopped"
+    },
+    "nginx": {
+      "name": "gabi-nginx",
+      "type": "proxy",
+      "image": "nginx:alpine",
+      "ports": [
+        "80:80",
+        "443:443"
+      ],
+      "volumes": [
+        "./nginx/nginx.conf:/etc/nginx/nginx.conf:ro",
+        "./nginx/ssl:/etc/nginx/ssl:ro",
+        "./logs/nginx:/var/log/nginx"
+      ],
+      "depends_on": [
+        "frontend",
+        "gateway"
+      ],
+      "healthcheck": {
+        "test": ["CMD", "curl", "-f", "http://localhost/"],
+        "interval": "30s",
+        "timeout": "10s",
+        "retries": 3,
+        "start_period": "40s"
+      },
+      "restart": "unless-stopped"
+    }
+  },
+  "networks": {
+    "gabi-network": {
+      "driver": "bridge"
+    }
+  },
+  "volumes": {
+    "nginx-logs": {
+      "driver": "local"
+    }
+  },
+  "domains": {
+    "frontend": "seu-dominio.com",
+    "api": "api.seu-dominio.com"
+  },
+  "ssl": {
+    "provider": "letsencrypt",
+    "email": "seu-email@dominio.com",
+    "auto_renew": true
+  },
+  "monitoring": {
+    "enabled": true,
+    "health_checks": true,
+    "logs": true,
+    "metrics": true
+  },
+  "backup": {
+    "enabled": true,
+    "schedule": "0 2 * * *",
+    "retention": "7 days",
+    "include_volumes": true
+  },
+  "resources": {
+    "cpu_limit": "2",
+    "memory_limit": "4G",
+    "storage_limit": "50G"
+  },
+  "security": {
+    "firewall": true,
+    "rate_limiting": true,
+    "ssl_redirect": true,
+    "security_headers": true
+  },
+  "deployment": {
+    "strategy": "rolling",
+    "replicas": 1,
+    "update_config": {
+      "parallelism": 1,
+      "delay": "10s",
+      "failure_action": "rollback"
+    },
+    "rollback_config": {
+      "parallelism": 1,
+      "delay": "10s"
+    }
+  }
+} 

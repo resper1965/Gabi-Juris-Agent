@@ -1,0 +1,119 @@
+version: '3.8'
+
+services:
+  # Frontend React App
+  gabi-frontend:
+    image: node:18-alpine
+    container_name: gabi-frontend
+    working_dir: /app
+    ports:
+      - "5173:5173"
+    environment:
+      - NODE_ENV=production
+      - VITE_API_BASE_URL=${VITE_API_BASE_URL}
+      - VITE_SUPABASE_URL=${VITE_SUPABASE_URL}
+      - VITE_SUPABASE_ANON_KEY=${VITE_SUPABASE_ANON_KEY}
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    command: >
+      sh -c "npm install &&
+             npm run build &&
+             npm run preview -- --host 0.0.0.0 --port 5173"
+    networks:
+      - gabi-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5173/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Gateway Express API
+  gabi-gateway:
+    image: node:18-alpine
+    container_name: gabi-gateway
+    working_dir: /app
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - JWT_SECRET=${JWT_SECRET}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
+      - RATE_LIMIT_WINDOW=${RATE_LIMIT_WINDOW:-900000}
+      - RATE_LIMIT_MAX=${RATE_LIMIT_MAX:-100}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - LOG_FORMAT=${LOG_FORMAT:-json}
+      - MAX_PAYLOAD_SIZE=${MAX_PAYLOAD_SIZE:-10485760}
+      - REQUEST_TIMEOUT=${REQUEST_TIMEOUT:-300000}
+      - STORAGE_BUCKET=${STORAGE_BUCKET:-gabi-documents}
+      - STORAGE_REGION=${STORAGE_REGION:-us-east-1}
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASS=${SMTP_PASS}
+      - MONITORING_URL=${MONITORING_URL}
+      - MONITORING_API_KEY=${MONITORING_API_KEY}
+      - BACKUP_INTERVAL=${BACKUP_INTERVAL:-24}
+      - BACKUP_RETENTION=${BACKUP_RETENTION:-30}
+      - ERROR_THRESHOLD=${ERROR_THRESHOLD:-10}
+      - ALERT_CHECK_INTERVAL=${ALERT_CHECK_INTERVAL:-5}
+      - DEBUG=${DEBUG:-false}
+      - DEV_MODE=${DEV_MODE:-false}
+      - FORCE_HTTPS=${FORCE_HTTPS:-true}
+      - TRUST_PROXY=${TRUST_PROXY:-true}
+      - COMPRESSION_LEVEL=${COMPRESSION_LEVEL:-6}
+    volumes:
+      - ./gateway:/app
+      - /app/node_modules
+      - ./logs:/app/logs
+    command: >
+      sh -c "npm install &&
+             npm run build &&
+             npm start"
+    networks:
+      - gabi-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Nginx Reverse Proxy
+  gabi-nginx:
+    image: nginx:alpine
+    container_name: gabi-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - ./logs/nginx:/var/log/nginx
+    networks:
+      - gabi-network
+    restart: unless-stopped
+    depends_on:
+      - gabi-frontend
+      - gabi-gateway
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  gabi-network:
+    driver: bridge
+
+volumes:
+  nginx-logs:
+    driver: local 
