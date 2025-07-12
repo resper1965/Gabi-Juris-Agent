@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+https://github.com/resper1965/Gabi-Juris-Agentimport { useState, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/select'
