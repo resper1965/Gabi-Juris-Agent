@@ -225,3 +225,7 @@ Este projeto está licenciado sob a Licença MIT - veja o arquivo [LICENSE](LICE
     </a>
   </p>
 </div> 
+=======
+# Gabi-Juris-Agent
+Agente IA voltada a escritorios de advocacia
+>>>>>>> 1a0d18889c832540068b0e1448f9d62681fdfa3c
